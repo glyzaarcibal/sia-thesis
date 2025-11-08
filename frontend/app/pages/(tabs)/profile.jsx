@@ -6,7 +6,8 @@ import {
   ScrollView,
   TextInput,
   Modal,
-  Alert
+  Alert,
+  FlatList
 } from "react-native";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter } from "expo-router";
@@ -18,6 +19,21 @@ import BoldText from "../../../components/BoldText";
 import CounselingCharts from "../../../components/CounselingCharts";
 import { setFirstName, setLastName } from "../../../redux/userSlice";
 import Toast from "react-native-simple-toast";
+import { Picker } from '@react-native-picker/picker';
+
+// Common country codes
+const COUNTRY_CODES = [
+  { code: "+63", country: "Philippines", flag: "🇵🇭" },
+  { code: "+1", country: "USA/Canada", flag: "🇺🇸" },
+  { code: "+44", country: "UK", flag: "🇬🇧" },
+  { code: "+61", country: "Australia", flag: "🇦🇺" },
+  { code: "+81", country: "Japan", flag: "🇯🇵" },
+  { code: "+82", country: "South Korea", flag: "🇰🇷" },
+  { code: "+65", country: "Singapore", flag: "🇸🇬" },
+  { code: "+86", country: "China", flag: "🇨🇳" },
+  { code: "+91", country: "India", flag: "🇮🇳" },
+  { code: "+971", country: "UAE", flag: "🇦🇪" },
+];
 
 const Profile = ({ navigation }) => {
   const authState = useSelector((state) => state.auth.auth);
@@ -29,19 +45,52 @@ const Profile = ({ navigation }) => {
   const [profile, setProfile] = useState({});
   const [analysisData, setAnalysisData] = useState(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [countryCodeModalVisible, setCountryCodeModalVisible] = useState(false);
   const [editedProfile, setEditedProfile] = useState({
     first_name: "",
     last_name: "",
     location: "",
     age: "",
     gender: "",
+    phone_number: "",
+    country_code: "+63",
   });
+
+  // Generate age options from 13 to 100
+  const ageOptions = Array.from({ length: 88 }, (_, i) => i + 13);
+  
+  const genderOptions = [
+    { label: "Select Gender", value: "" },
+    { label: "Male", value: "Male" },
+    { label: "Female", value: "Female" },
+    { label: "Other", value: "Other" },
+  ];
+
+  const parsePhoneNumber = (phoneNumber) => {
+    if (!phoneNumber) return { countryCode: "+63", number: "" };
+    
+    // Find matching country code
+    const matchedCode = COUNTRY_CODES.find(c => phoneNumber.startsWith(c.code));
+    
+    if (matchedCode) {
+      return {
+        countryCode: matchedCode.code,
+        number: phoneNumber.substring(matchedCode.code.length)
+      };
+    }
+    
+    // Default to +63 if no match
+    return { countryCode: "+63", number: phoneNumber };
+  };
 
   const fetchProfile = async () => {
     try {
       const response = await axiosInstanceWithBearer.get("/api/user/profile");
       console.log("Profile data:", response.data);
       setProfile(response.data);
+      
+      // Parse phone number
+      const { countryCode, number } = parsePhoneNumber(response.data.profile?.phone_number);
       
       // Set edited profile with current data
       const profileData = {
@@ -50,6 +99,8 @@ const Profile = ({ navigation }) => {
         location: response.data.profile?.location || "",
         age: response.data.profile?.age?.toString() || "",
         gender: response.data.profile?.gender || "",
+        country_code: countryCode,
+        phone_number: number,
       };
       
       console.log("Setting editedProfile:", profileData);
@@ -73,12 +124,31 @@ const Profile = ({ navigation }) => {
 
   const handleUpdateProfile = async () => {
     try {
-      // Update basic profile info
+      // Validate phone number if provided
+      if (editedProfile.phone_number && !/^\d{7,15}$/.test(editedProfile.phone_number)) {
+        Alert.alert(
+          "Error",
+          "Please enter a valid phone number (7-15 digits, numbers only)."
+        );
+        return;
+      }
+
+      // Combine country code and phone number
+      const fullPhoneNumber = editedProfile.phone_number 
+        ? `${editedProfile.country_code}${editedProfile.phone_number}` 
+        : "";
+
+      // Update profile info (including first_name and last_name)
       const response = await axiosInstanceWithBearer.put("/api/user/profile", {
+        first_name: editedProfile.first_name,
+        last_name: editedProfile.last_name,
         gender: editedProfile.gender,
         age: editedProfile.age ? parseInt(editedProfile.age) : null,
         location: editedProfile.location,
+        phone_number: fullPhoneNumber,
       });
+
+      console.log("Profile updated:", response.data);
 
       // Update Redux store
       dispatch(setFirstName(editedProfile.first_name));
@@ -99,23 +169,32 @@ const Profile = ({ navigation }) => {
     }
   };
 
+  const selectCountryCode = (code) => {
+    setEditedProfile({ ...editedProfile, country_code: code });
+    setCountryCodeModalVisible(false);
+  };
+
   useEffect(() => {
     if (!authState.isLoggedIn) {
       navigation.navigate("Login");
     }
     fetchProfile();
-    fetchLatest();
+    // fetchLatest(); // Comment out since endpoint doesn't exist yet
   }, []);
 
   // Update editedProfile when modal opens
   useEffect(() => {
     if (editModalVisible) {
+      const { countryCode, number } = parsePhoneNumber(profile.profile?.phone_number);
+      
       setEditedProfile({
         first_name: profile.first_name || user.firstName || "",
         last_name: profile.last_name || user.lastName || "",
         location: profile.profile?.location || "",
         age: profile.profile?.age?.toString() || "",
         gender: profile.profile?.gender || "",
+        country_code: countryCode,
+        phone_number: number,
       });
       console.log("Modal opened, current data:", {
         first_name: profile.first_name || user.firstName,
@@ -123,9 +202,12 @@ const Profile = ({ navigation }) => {
         location: profile.profile?.location,
         age: profile.profile?.age,
         gender: profile.profile?.gender,
+        phone_number: profile.profile?.phone_number,
       });
     }
   }, [editModalVisible]);
+
+  const selectedCountry = COUNTRY_CODES.find((c) => c.code === editedProfile.country_code);
 
   return (
     <View style={styles.container}>
@@ -178,6 +260,11 @@ const Profile = ({ navigation }) => {
                 {profile.profile?.age && profile.profile?.gender ? " • " : ""}
                 {profile.profile?.gender || ""}
               </Text>
+              {profile.profile?.phone_number && (
+                <Text style={styles.bio}>
+                  📞 {profile.profile.phone_number}
+                </Text>
+              )}
             </View>
 
             {/* Latest Analysis Section */}
@@ -187,7 +274,7 @@ const Profile = ({ navigation }) => {
                 <CounselingCharts analysisData={analysisData} />
               ) : (
                 <View style={styles.loadingContainer}>
-                  <Text>Loading analysis data...</Text>
+                  <Text>No analysis data available</Text>
                 </View>
               )}
             </View>
@@ -282,29 +369,68 @@ const Profile = ({ navigation }) => {
                 />
               </View>
 
+              {/* Age Dropdown */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Age</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editedProfile.age}
-                  onChangeText={(text) =>
-                    setEditedProfile({ ...editedProfile, age: text })
-                  }
-                  placeholder="Enter age"
-                  keyboardType="numeric"
-                />
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={editedProfile.age}
+                    onValueChange={(itemValue) =>
+                      setEditedProfile({ ...editedProfile, age: itemValue })
+                    }
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="Select Age" value="" />
+                    {ageOptions.map((age) => (
+                      <Picker.Item key={age} label={age.toString()} value={age.toString()} />
+                    ))}
+                  </Picker>
+                </View>
               </View>
 
+              {/* Gender Dropdown */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Gender</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editedProfile.gender}
-                  onChangeText={(text) =>
-                    setEditedProfile({ ...editedProfile, gender: text })
-                  }
-                  placeholder="Enter gender"
-                />
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={editedProfile.gender}
+                    onValueChange={(itemValue) =>
+                      setEditedProfile({ ...editedProfile, gender: itemValue })
+                    }
+                    style={styles.picker}
+                  >
+                    {genderOptions.map((option) => (
+                      <Picker.Item key={option.value} label={option.label} value={option.value} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+
+              {/* Phone Number with Country Code */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Contact Number</Text>
+                <View style={styles.phoneContainer}>
+                  <TouchableOpacity
+                    style={styles.countryCodeButton}
+                    onPress={() => setCountryCodeModalVisible(true)}
+                  >
+                    <Text style={styles.countryCodeText}>
+                      {selectedCountry?.flag} {editedProfile.country_code}
+                    </Text>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.phoneInput}
+                    value={editedProfile.phone_number}
+                    onChangeText={(text) =>
+                      setEditedProfile({ 
+                        ...editedProfile, 
+                        phone_number: text.replace(/[^0-9]/g, "") 
+                      })
+                    }
+                    placeholder="9123456789"
+                    keyboardType="phone-pad"
+                  />
+                </View>
               </View>
 
               <TouchableOpacity
@@ -314,6 +440,46 @@ const Profile = ({ navigation }) => {
                 <Text style={styles.saveButtonText}>Save Changes</Text>
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Country Code Modal */}
+      <Modal
+        visible={countryCodeModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setCountryCodeModalVisible(false)}
+      >
+        <View style={styles.countryModalOverlay}>
+          <View style={styles.countryModalContent}>
+            <View style={styles.countryModalHeader}>
+              <Text style={styles.countryModalTitle}>Select Country Code</Text>
+              <TouchableOpacity
+                onPress={() => setCountryCodeModalVisible(false)}
+                style={styles.closeButton}
+              >
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={COUNTRY_CODES}
+              keyExtractor={(item) => item.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.countryItem,
+                    item.code === editedProfile.country_code && styles.selectedCountryItem,
+                  ]}
+                  onPress={() => selectCountryCode(item.code)}
+                >
+                  <Text style={styles.countryItemText}>
+                    {item.flag} {item.country}
+                  </Text>
+                  <Text style={styles.countryCodeLabel}>{item.code}</Text>
+                </TouchableOpacity>
+              )}
+            />
           </View>
         </View>
       </Modal>
@@ -456,6 +622,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#f9f9f9",
   },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 10,
+    backgroundColor: "#f9f9f9",
+    overflow: "hidden",
+  },
+  picker: {
+    height: 50,
+  },
+  // Phone Number Styles
+  phoneContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  countryCodeButton: {
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 10,
+    padding: 12,
+    marginRight: 8,
+    minWidth: 90,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9f9f9",
+  },
+  countryCodeText: {
+    fontSize: 16,
+  },
+  phoneInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: "#f9f9f9",
+  },
   saveButton: {
     backgroundColor: "#6cbab0",
     padding: 15,
@@ -468,6 +672,60 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Country Code Modal Styles
+  countryModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  countryModalContent: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: "70%",
+    paddingTop: 16,
+  },
+  countryModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  countryModalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  closeButton: {
+    padding: 4,
+  },
+  closeButtonText: {
+    fontSize: 24,
+    color: "#888",
+  },
+  countryItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  selectedCountryItem: {
+    backgroundColor: "#e3f2fd",
+  },
+  countryItemText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  countryCodeLabel: {
+    fontSize: 16,
+    color: "#666",
+    fontWeight: "500",
   },
 });
 
