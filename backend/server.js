@@ -454,9 +454,12 @@ app.use((err, req, res, next) => {
 // ============================================
 
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
+const HOST = '0.0.0.0'; // ⭐ ADD THIS LINE
+
+const server = app.listen(PORT, HOST, () => { // ⭐ ADD HOST HERE
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 http://localhost:${PORT}`);
+  console.log(`🌐 Local: http://localhost:${PORT}`);
+  console.log(`🌐 Network: http://192.168.100.129:${PORT}`); // ⭐ ADD THIS LINE
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

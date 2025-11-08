@@ -35,7 +35,7 @@ export const AuthProvider = ({ children }) => {
 
   // Create axios instance WITHOUT the Authorization header in initial config
   const axiosInstanceWithBearer = axios.create({
-    baseURL: "http://192.168.100.129:8000",
+    baseURL: "http://192.168.100.129:5000",
     // baseURL: "http://192.168.1.47:8000",
     // baseURL: "http://192.168.28.101:8000",
     timeout: 20000,
