@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Glacial";
+  src: url("./assets/fonts/GlacialIndifference-Regular.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "OpenSans";
+  src: url("./assets//fonts/OpenSans-Regular.ttf") format("truetype");
+}
+
+:root {
+  --font-glacial: Glacial, sans-serif;
+  --font-open: OpenSans, sans-serif;
+}
+
+* {
+  font-family: var(--font-glacial);
+}
+
+body {
+  overflow-x: hidden;
+}
+
+blockquote {
+  font-size: 1rem;
+  font-style: italic;
+  color: #333;
+  position: relative;
+  padding: 20px;
+  padding-left: 40px;
+  border-left: 5px solid #0cdfc6;
+  border-radius: 24px;
+  margin: 20px 0px;
+}
+
+blockquote::before {
+  content: "“";
+  font-size: 3rem;
+  color: #0cdfc6;
+  position: absolute;
+  top: -10px;
+  left: 10px;
+  border-radius: 24px;
+}
+
+blockquote::after {
+  content: "”";
+  font-size: 3rem;
+  color: #0cdfc6;
+  position: absolute;
+  bottom: -10px;
+  right: 10px;
+  border-radius: 24px;
+}
+
+.shadow-custom {
+  box-shadow: 0px 0px 8px 16px rgba(0, 0, 0, 0, 0.5);
+}

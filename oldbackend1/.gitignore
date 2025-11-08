@@ -1,0 +1,9 @@
+.venv
+venv
+
+# From your project root
+echo "" >> .gitignore
+echo "# Environment variables" >> .gitignore
+echo ".env" >> .gitignore
+echo "backend/.env" >> .gitignore
+echo "backend/app/.env" >> .gitignore
