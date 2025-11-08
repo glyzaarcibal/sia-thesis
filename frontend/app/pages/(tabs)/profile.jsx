@@ -18,7 +18,7 @@ import { default as Text } from "../../../components/CustomText";
 import BoldText from "../../../components/BoldText";
 import CounselingCharts from "../../../components/CounselingCharts";
 import { setFirstName, setLastName } from "../../../redux/userSlice";
-import Toast from "react-native-simple-toast";
+import Toast from "../../../utils/toast";
 import { Picker } from '@react-native-picker/picker';
 
 // Common country codes
@@ -158,11 +158,7 @@ const Profile = ({ navigation }) => {
       await fetchProfile();
       
       setEditModalVisible(false);
-      Toast.showWithGravity(
-        "Profile updated successfully!",
-        Toast.SHORT,
-        Toast.CENTER
-      );
+      Toast.show("Profile updated successfully!");
     } catch (error) {
       console.error("Error updating profile:", error);
       Alert.alert("Error", "Failed to update profile. Please try again.");

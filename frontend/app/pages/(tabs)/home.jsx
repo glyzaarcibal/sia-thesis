@@ -11,7 +11,6 @@ import background from "../../../assets/images/bg/abstract2.png";
 import { default as Text } from "../../../components/CustomText";
 import BoldText from "../../../components/BoldText";
 
-import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import logo from "../../../assets/images/vera.png";
 
@@ -44,12 +43,13 @@ const TILE_SPACING = 15;
 
 const Home = ({ navigation }) => {
   const [visible, setVisible] = React.useState(false);
-  console.log('User first_name:', user?.first_name);
-  const showDialog = () => setVisible(true);
-  const hideDialog = () => setVisible(false);
-
   const { user } = useAuth();
   const authState = useSelector((state) => state.auth.auth);
+
+  console.log('User first_name:', user?.first_name);
+  const hideDialog = () => setVisible(false);
+
+  
 
   // Resources data matching your Resources.jsx
   const resources = [

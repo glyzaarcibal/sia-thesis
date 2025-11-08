@@ -147,7 +147,8 @@ const MoodTrackerScreen = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <AntDesign name="arrowleft" size={24} color="#1B5E20" />
+          <AntDesign name="arrow-left" size={24} color="#1B5E20" />
+          
         </TouchableOpacity>
       </View>
 

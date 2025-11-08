@@ -12,7 +12,7 @@ import {
   setId,
 } from "../redux/userSlice";
 import { useRouter } from "expo-router";
-import Toast from "react-native-simple-toast";
+import Toast from "../utils/toast";
 
 const AuthContext = createContext();
 
