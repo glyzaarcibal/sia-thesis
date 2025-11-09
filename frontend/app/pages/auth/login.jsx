@@ -10,7 +10,7 @@ const Login = () => {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [password, setPassword] = useState("");
-  const { login } = useAuth();
+  const { login } = useAuth(); // ✅ Only need login function
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -66,23 +66,48 @@ const Login = () => {
   }, []);
 
   const handleLogin = async () => {
+    // Prevent double-click
+    if (isLoading) {
+      console.log("⚠️ Already logging in, ignoring duplicate call");
+      return;
+    }
+
     Keyboard.dismiss();
     setIsLoading(true);
     setError(null);
     
+    console.log("🔐 Starting login process...");
+    
     try {
-      const isLoggedIn = await login(email, password, setError);
-      setIsLoading(false);
+      const result = await login(email, password, setError);
       
-      if (isLoggedIn) {
-        console.log("Login successful! Navigating to Home...");
-        // Navigate to Home screen after successful login
-        navigation.navigate("Main");
+      console.log("🔍 Login Result:", JSON.stringify(result, null, 2));
+      
+      if (result && result.success === true && result.user) {
+        console.log("✅ Login successful!");
+        console.log("📋 User Data:", JSON.stringify(result.user, null, 2));
+        console.log("👤 User Role:", result.user.role);
+        console.log("🔐 Is Admin:", result.user.isAdmin);
+        
+        // Small delay to ensure state is updated
+        setTimeout(() => {
+          if (result.user.role === 'admin' || result.user.isAdmin === true) {
+            console.log("🎯 ADMIN USER - Redirecting to AdminDashboard...");
+            navigation.replace("AdminDashboard");
+          } else {
+            console.log("👥 Regular user - Redirecting to Main...");
+            navigation.replace("Main");
+          }
+        }, 100);
+      } else {
+        console.log("❌ Login failed - Result:", JSON.stringify(result, null, 2));
+        setError("Login failed. Please check your credentials.");
       }
     } catch (err) {
-      setIsLoading(false);
+      console.error("❌ Login error:", err);
       setError("Login failed. Please try again.");
-      console.error("Login error:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 

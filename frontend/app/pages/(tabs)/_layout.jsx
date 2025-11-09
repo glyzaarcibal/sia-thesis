@@ -1,7 +1,6 @@
-import { View, Text, StyleSheet, Platform  } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import React from "react";
-import { Toaster } from 'react-hot-toast';
-
+import Toast from "react-native-toast-message";
 import Home from "../(tabs)/home";
 import Messages from "./messages";
 import Profile from "./profile";
@@ -20,15 +19,20 @@ const Tabs = createBottomTabNavigator();
 const _layout = () => {
   return (
     <>
-      {Platform.OS === 'web' && <Toaster position="top-center" />}
       <Tabs.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: "#0cdfc6", // Set active tab color
+          tabBarActiveTintColor: "#0cdfc6",
           tabBarInactiveTintColor: "gray",
           tabBarStyle: {
-            height: 60, // Increased height for better spacing
+            height: 60,
             paddingBottom: 5,
+            ...(Platform.OS === 'web' && {
+              position: 'fixed',
+              bottom: 0,
+              width: '100%',
+              zIndex: 1000
+            })
           },
         }}
       >
@@ -68,7 +72,6 @@ const _layout = () => {
             ),
           }}
         />
-
         <Tabs.Screen
           name="Resources"
           component={Resources}
@@ -94,6 +97,7 @@ const _layout = () => {
           }}
         />
       </Tabs.Navigator>
+      <Toast />
     </>
   );
 };
@@ -102,15 +106,24 @@ const styles = StyleSheet.create({
   largeIconContainer: {
     width: 70,
     height: 70,
-    backgroundColor: "#0cdfc6", // Background color of icon
+    backgroundColor: "#0cdfc6",
     borderRadius: 50,
     justifyContent: "center",
     alignItems: "center",
     position: "absolute",
-    top: -20, // Moves the icon up for emphasis
+    top: -20,
     shadowColor: "#000",
     shadowOpacity: 0.3,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+      transition: 'transform 0.2s',
+      ':hover': {
+        transform: 'scale(1.1)'
+      }
+    })
   },
 });
+
+
 
 export default _layout;

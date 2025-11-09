@@ -21,6 +21,7 @@ import WeeklyWellnessReport from "./pages/games/WeeklyWellnessReport";
 import ClipCardGame from "./pages/games/ClipCardGame";
 import Diary from "./pages/games/Diary";
 import NotificationsScreen from "./pages/notification/Notifications";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { NavigationContainer } from "@react-navigation/native";
@@ -48,6 +49,8 @@ const AuthStack = () => {
         <Stack.Screen name="Login" component={Login} />
         <Stack.Screen name="Profile" component={Profile} />
         <Stack.Screen name="Register" component={Register} />
+
+        <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
         <Stack.Screen name="Main" component={_layout} />
         <Stack.Screen name="Chat" component={Chat} />
         <Stack.Screen name="Game" component={Games} />
