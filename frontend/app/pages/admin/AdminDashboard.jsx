@@ -15,9 +15,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ArticleManager from './ArticleManager';
 
 const { width } = Dimensions.get('window');
 const isMobile = width < 768;
+
+// API Configuration
+const API_URL = 'http://10.111.189.143:5000/api'; // Replace with your backend URL
 
 const AdminDashboard = ({ navigation }) => {
   const router = useRouter();
@@ -28,15 +33,66 @@ const AdminDashboard = ({ navigation }) => {
     pendingPsychologists: 0,
     activeUsers: 0
   });
+  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState([]);
 
+  // Fetch dashboard statistics
   useEffect(() => {
-    setStats({
-      totalUsers: 1247,
-      totalPsychologists: 32,
-      pendingPsychologists: 5,
-      activeUsers: 834
-    });
+    fetchDashboardStats();
   }, []);
+
+  const fetchDashboardStats = async () => {
+    try {
+      setLoading(true);
+      const token = await AsyncStorage.getItem('token');
+      
+      if (!token) {
+        Alert.alert('Error', 'No authentication token found');
+        router.replace('/Login');
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/users`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch users');
+      }
+
+      const data = await response.json();
+      setUsers(data);
+
+      // Calculate statistics
+      const totalUsers = data.length;
+      const psychologists = data.filter(user => user.role === 'psychologist');
+      const totalPsychologists = psychologists.length;
+      
+      // You can add logic to determine pending psychologists
+      // For now, we'll assume some psychologists might need verification
+      const pendingPsychologists = psychologists.filter(p => !p.is_verified).length;
+      
+      // Active users (logged in within last 30 days or has recent activity)
+      // For now, we'll show all users as this requires additional tracking
+      const activeUsers = totalUsers;
+
+      setStats({
+        totalUsers,
+        totalPsychologists,
+        pendingPsychologists,
+        activeUsers
+      });
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      Alert.alert('Error', 'Failed to load dashboard statistics');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -51,23 +107,35 @@ const AdminDashboard = ({ navigation }) => {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardView stats={stats} />;
+        return <DashboardView stats={stats} users={users} loading={loading} refreshStats={fetchDashboardStats} />;
       case 'users':
-        return <UserManagement />;
+        return <UserManagement users={users} refreshUsers={fetchDashboardStats} />;
       case 'psychologists':
-        return <PsychologistVerification />;
+        return <PsychologistVerification users={users} refreshUsers={fetchDashboardStats} />;
       case 'content':
         return <ContentManagement />;
       case 'crisis':
         return <CrisisMonitoring />;
       case 'analytics':
-        return <AnalyticsView />;
+        return <AnalyticsView users={users} />;
       case 'settings':
         return <SystemSettings />;
       default:
-        return <DashboardView stats={stats} />;
+        return <DashboardView stats={stats} users={users} loading={loading} refreshStats={fetchDashboardStats} />;
     }
   };
+
+  if (loading && activeTab === 'dashboard') {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor="#6366F1" />
+        <View style={[styles.container, styles.centerContent]}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={styles.loadingText}>Loading dashboard...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -88,6 +156,12 @@ const AdminDashboard = ({ navigation }) => {
               <Text style={styles.headerSubtitle}>Mental Health Platform</Text>
             </View>
           </View>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={fetchDashboardStats}
+          >
+            <MaterialIcons name="refresh" size={24} color="white" />
+          </TouchableOpacity>
         </View>
 
         {/* Navigation Tabs */}
@@ -133,7 +207,7 @@ const AdminDashboard = ({ navigation }) => {
   );
 };
 
-const DashboardView = ({ stats }) => {
+const DashboardView = ({ stats, users, loading, refreshStats }) => {
   const statCards = [
     { label: 'Total Users', value: stats.totalUsers, icon: 'people', color: '#3B82F6', trend: '+12%' },
     { label: 'Active Users', value: stats.activeUsers, icon: 'trending-up', color: '#10B981', trend: '+8%' },
@@ -141,9 +215,17 @@ const DashboardView = ({ stats }) => {
     { label: 'Pending', value: stats.pendingPsychologists, icon: 'schedule', color: '#F59E0B', trend: '5 new' }
   ];
 
+  // Get recent users (last 5)
+  const recentUsers = users.slice(-5).reverse();
+
   return (
     <View>
-      <Text style={styles.sectionTitle}>Dashboard Overview</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Dashboard Overview</Text>
+        <TouchableOpacity onPress={refreshStats} style={styles.refreshIconBtn}>
+          <MaterialIcons name="refresh" size={20} color="#6366F1" />
+        </TouchableOpacity>
+      </View>
 
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
@@ -168,22 +250,32 @@ const DashboardView = ({ stats }) => {
       <View style={styles.section}>
         <Text style={styles.sectionSubtitle}>Recent Registrations</Text>
         <View style={styles.card}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <View key={i} style={styles.listItem}>
-              <View style={styles.listItemLeft}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>U{i}</Text>
+          {recentUsers.length > 0 ? (
+            recentUsers.map((user) => (
+              <View key={user._id} style={styles.listItem}>
+                <View style={styles.listItemLeft}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {user.first_name?.[0]}{user.last_name?.[0]}
+                    </Text>
+                  </View>
+                  <View style={styles.listItemInfo}>
+                    <Text style={styles.listItemTitle}>
+                      {user.first_name} {user.last_name}
+                    </Text>
+                    <Text style={styles.listItemSubtitle}>{user.email}</Text>
+                  </View>
                 </View>
-                <View style={styles.listItemInfo}>
-                  <Text style={styles.listItemTitle}>User {i}</Text>
-                  <Text style={styles.listItemSubtitle}>{i} hours ago</Text>
+                <View style={[styles.statusBadge, { backgroundColor: user.role === 'psychologist' ? '#E0E7FF' : '#D1FAE5' }]}>
+                  <Text style={[styles.statusBadgeText, { color: user.role === 'psychologist' ? '#4338CA' : '#047857' }]}>
+                    {user.role}
+                  </Text>
                 </View>
               </View>
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusBadgeText}>Active</Text>
-              </View>
-            </View>
-          ))}
+            ))
+          ) : (
+            <Text style={styles.emptyText}>No users yet</Text>
+          )}
         </View>
       </View>
 
@@ -192,13 +284,10 @@ const DashboardView = ({ stats }) => {
         <Text style={styles.sectionSubtitle}>Crisis Alerts</Text>
         <View style={styles.alertCard}>
           <View style={styles.alertHeader}>
-            <MaterialIcons name="warning" color="#DC2626" size={20} />
+            <MaterialIcons name="info" color="#6366F1" size={20} />
             <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>High-risk keyword detected</Text>
-              <Text style={styles.alertSubtitle}>User diary - 15 mins ago</Text>
-              <TouchableOpacity>
-                <Text style={styles.alertAction}>Review Now →</Text>
-              </TouchableOpacity>
+              <Text style={styles.alertTitle}>No active crisis alerts</Text>
+              <Text style={styles.alertSubtitle}>System monitoring is active</Text>
             </View>
           </View>
         </View>
@@ -207,8 +296,60 @@ const DashboardView = ({ stats }) => {
   );
 };
 
-const UserManagement = () => {
+const UserManagement = ({ users, refreshUsers }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [filteredUsers, setFilteredUsers] = useState(users);
+
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredUsers(users);
+    } else {
+      const query = searchQuery.toLowerCase();
+      const filtered = users.filter(user => 
+        user.email?.toLowerCase().includes(query) ||
+        user.first_name?.toLowerCase().includes(query) ||
+        user.last_name?.toLowerCase().includes(query) ||
+        user.username?.toLowerCase().includes(query)
+      );
+      setFilteredUsers(filtered);
+    }
+  }, [searchQuery, users]);
+
+  const handleDeleteUser = async (userId) => {
+    Alert.alert(
+      'Delete User',
+      'Are you sure you want to delete this user?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const token = await AsyncStorage.getItem('token');
+              const response = await fetch(`${API_URL}/users/${userId}`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+              });
+
+              if (response.ok) {
+                Alert.alert('Success', 'User deleted successfully');
+                refreshUsers();
+              } else {
+                Alert.alert('Error', 'Failed to delete user');
+              }
+            } catch (error) {
+              console.error('Delete error:', error);
+              Alert.alert('Error', 'Failed to delete user');
+            }
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <View>
@@ -227,85 +368,119 @@ const UserManagement = () => {
 
       {/* Users List */}
       <View style={styles.card}>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <View key={i} style={styles.userItem}>
-            <View style={styles.userInfo}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>JD</Text>
-              </View>
-              <View style={styles.userDetails}>
-                <Text style={styles.userName}>John Doe {i}</Text>
-                <Text style={styles.userEmail}>john{i}@email.com</Text>
-                <View style={styles.userMeta}>
-                  <View style={styles.roleBadge}>
-                    <Text style={styles.roleBadgeText}>User</Text>
+        {filteredUsers.length > 0 ? (
+          filteredUsers.map((user) => (
+            <View key={user._id} style={styles.userItem}>
+              <View style={styles.userInfo}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {user.first_name?.[0]}{user.last_name?.[0]}
+                  </Text>
+                </View>
+                <View style={styles.userDetails}>
+                  <Text style={styles.userName}>{user.first_name} {user.last_name}</Text>
+                  <Text style={styles.userEmail}>{user.email}</Text>
+                  <View style={styles.userMeta}>
+                    <View style={[styles.roleBadge, { backgroundColor: user.role === 'psychologist' ? '#E0E7FF' : '#DBEAFE' }]}>
+                      <Text style={[styles.roleBadgeText, { color: user.role === 'psychologist' ? '#4338CA' : '#1E40AF' }]}>
+                        {user.role}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </View>
+              <View style={styles.userActions}>
+                <TouchableOpacity 
+                  style={styles.actionBtn}
+                  onPress={() => Alert.alert('User Details', JSON.stringify(user, null, 2))}
+                >
+                  <MaterialIcons name="visibility" size={18} color="#6366F1" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.actionBtn}
+                  onPress={() => handleDeleteUser(user._id)}
+                >
+                  <MaterialIcons name="delete" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.userActions}>
-              <TouchableOpacity style={styles.actionBtn}>
-                <MaterialIcons name="visibility" size={18} color="#6366F1" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtn}>
-                <MaterialIcons name="edit" size={18} color="#6366F1" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
+          ))
+        ) : (
+          <Text style={styles.emptyText}>No users found</Text>
+        )}
       </View>
     </View>
   );
 };
 
-const PsychologistVerification = () => {
+const PsychologistVerification = ({ users, refreshUsers }) => {
+  const psychologists = users.filter(user => user.role === 'psychologist');
+
   return (
     <View>
       <Text style={styles.sectionTitle}>Psychologist Verification</Text>
 
-      {[1, 2, 3].map((i) => (
-        <View key={i} style={styles.card}>
-          <View style={styles.psychHeader}>
-            <View style={styles.psychAvatar}>
-              <Text style={styles.psychAvatarText}>DR</Text>
+      {psychologists.length > 0 ? (
+        psychologists.map((psych) => (
+          <View key={psych._id} style={styles.card}>
+            <View style={styles.psychHeader}>
+              <View style={styles.psychAvatar}>
+                <Text style={styles.psychAvatarText}>
+                  {psych.first_name?.[0]}{psych.last_name?.[0]}
+                </Text>
+              </View>
+              <View style={styles.psychInfo}>
+                <Text style={styles.psychName}>{psych.first_name} {psych.last_name}</Text>
+                <Text style={styles.psychEmail}>{psych.email}</Text>
+              </View>
+              <View style={styles.pendingBadge}>
+                <Text style={styles.pendingBadgeText}>
+                  {psych.is_verified ? 'Verified' : 'Pending'}
+                </Text>
+              </View>
             </View>
-            <View style={styles.psychInfo}>
-              <Text style={styles.psychName}>Dr. Sarah Johnson {i}</Text>
-              <Text style={styles.psychEmail}>sarah{i}@psych.com</Text>
-            </View>
-            <View style={styles.pendingBadge}>
-              <Text style={styles.pendingBadgeText}>Pending</Text>
-            </View>
-          </View>
 
-          <View style={styles.credentialsBox}>
-            <Text style={styles.credentialsLabel}>License: </Text>
-            <Text style={styles.credentialsText}>PSY-{12345 + i}</Text>
-          </View>
+            <View style={styles.credentialsBox}>
+              <Text style={styles.credentialsLabel}>Username: </Text>
+              <Text style={styles.credentialsText}>{psych.username}</Text>
+            </View>
 
-          <View style={styles.verifyActions}>
-            <TouchableOpacity style={styles.approveBtn}>
-              <MaterialIcons name="check-circle" color="#fff" size={18} />
-              <Text style={styles.approveBtnText}>Approve</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.rejectBtn}>
-              <MaterialIcons name="cancel" color="#fff" size={18} />
-              <Text style={styles.rejectBtnText}>Reject</Text>
-            </TouchableOpacity>
+            {!psych.is_verified && (
+              <View style={styles.verifyActions}>
+                <TouchableOpacity style={styles.approveBtn}>
+                  <MaterialIcons name="check-circle" color="#fff" size={18} />
+                  <Text style={styles.approveBtnText}>Approve</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.rejectBtn}>
+                  <MaterialIcons name="cancel" color="#fff" size={18} />
+                  <Text style={styles.rejectBtnText}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
+        ))
+      ) : (
+        <View style={styles.card}>
+          <Text style={styles.emptyText}>No psychologists registered yet</Text>
         </View>
-      ))}
+      )}
     </View>
   );
 };
 
 const ContentManagement = () => {
+  const [showArticleManager, setShowArticleManager] = useState(false);
+
   const contentTypes = [
-    { id: 'articles', label: 'Articles', icon: 'article', count: 45 },
+    { id: 'articles', label: 'Articles', icon: 'article', count: 45, action: () => setShowArticleManager(true) },
     { id: 'games', label: 'Games', icon: 'games', count: 12 },
     { id: 'quiz', label: 'Quiz', icon: 'quiz', count: 78 },
     { id: 'resources', label: 'Resources', icon: 'library-books', count: 24 }
   ];
+
+  if (showArticleManager) {
+    return <ArticleManager onBack={() => setShowArticleManager(false)} />;
+  }
 
   return (
     <View>
@@ -313,7 +488,11 @@ const ContentManagement = () => {
 
       <View style={styles.contentGrid}>
         {contentTypes.map((type) => (
-          <TouchableOpacity key={type.id} style={styles.contentCard}>
+          <TouchableOpacity 
+            key={type.id} 
+            style={styles.contentCard}
+            onPress={type.action}
+          >
             <MaterialIcons name={type.icon} color="#6366F1" size={32} />
             <Text style={styles.contentCount}>{type.count}</Text>
             <Text style={styles.contentLabel}>{type.label}</Text>
@@ -333,42 +512,29 @@ const CrisisMonitoring = () => {
       <View style={styles.statsRow}>
         <View style={styles.miniStatCard}>
           <MaterialIcons name="warning" color="#DC2626" size={24} />
-          <Text style={styles.miniStatValue}>3</Text>
+          <Text style={styles.miniStatValue}>0</Text>
           <Text style={styles.miniStatLabel}>Active</Text>
         </View>
         <View style={styles.miniStatCard}>
           <MaterialIcons name="schedule" color="#F59E0B" size={24} />
-          <Text style={styles.miniStatValue}>7</Text>
+          <Text style={styles.miniStatValue}>0</Text>
           <Text style={styles.miniStatLabel}>Review</Text>
         </View>
         <View style={styles.miniStatCard}>
           <MaterialIcons name="check-circle" color="#10B981" size={24} />
-          <Text style={styles.miniStatValue}>24</Text>
+          <Text style={styles.miniStatValue}>0</Text>
           <Text style={styles.miniStatLabel}>Resolved</Text>
         </View>
       </View>
 
-      <Text style={styles.sectionSubtitle}>Flagged Content</Text>
-      {[
-        { severity: 'HIGH', keyword: 'self-harm', user: 'User #4234', time: '5m ago' },
-        { severity: 'HIGH', keyword: 'suicide', user: 'User #8891', time: '12m ago' }
-      ].map((alert, idx) => (
-        <View key={idx} style={styles.alertCard}>
-          <View style={styles.alertBadge}>
-            <Text style={styles.alertBadgeText}>{alert.severity}</Text>
-          </View>
-          <Text style={styles.alertKeyword}>"{alert.keyword}"</Text>
-          <Text style={styles.alertDetails}>{alert.user} • {alert.time}</Text>
-          <TouchableOpacity style={styles.alertActionBtn}>
-            <Text style={styles.alertActionBtnText}>Take Action</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
+      <View style={styles.card}>
+        <Text style={styles.emptyText}>No crisis alerts at this time</Text>
+      </View>
     </View>
   );
 };
 
-const AnalyticsView = () => {
+const AnalyticsView = ({ users }) => {
   const features = [
     { name: 'Counseling Quiz', usage: 78, color: '#3B82F6' },
     { name: 'Breathing', usage: 92, color: '#10B981' },
@@ -379,6 +545,26 @@ const AnalyticsView = () => {
   return (
     <View>
       <Text style={styles.sectionTitle}>Analytics</Text>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Platform Statistics</Text>
+        <View style={styles.analyticsRow}>
+          <Text style={styles.analyticsLabel}>Total Registered Users:</Text>
+          <Text style={styles.analyticsValue}>{users.length}</Text>
+        </View>
+        <View style={styles.analyticsRow}>
+          <Text style={styles.analyticsLabel}>Regular Users:</Text>
+          <Text style={styles.analyticsValue}>
+            {users.filter(u => u.role === 'user').length}
+          </Text>
+        </View>
+        <View style={styles.analyticsRow}>
+          <Text style={styles.analyticsLabel}>Psychologists:</Text>
+          <Text style={styles.analyticsValue}>
+            {users.filter(u => u.role === 'psychologist').length}
+          </Text>
+        </View>
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Feature Engagement</Text>
@@ -452,6 +638,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
   header: {
     backgroundColor: '#6366F1',
     paddingHorizontal: 16,
@@ -466,6 +661,10 @@ const styles = StyleSheet.create({
   },
   backButton: {
     marginRight: 12,
+    padding: 4,
+  },
+  refreshButton: {
+    marginLeft: 12,
     padding: 4,
   },
   headerContent: {
@@ -521,11 +720,21 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 16,
+  },
+  refreshIconBtn: {
+    padding: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
   },
   sectionSubtitle: {
     fontSize: 16,
@@ -609,6 +818,12 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 12,
   },
+  emptyText: {
+    textAlign: 'center',
+    color: '#6B7280',
+    fontSize: 14,
+    paddingVertical: 20,
+  },
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -660,10 +875,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   alertCard: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#EEF2FF',
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#DC2626',
+    borderLeftColor: '#6366F1',
     padding: 12,
     marginBottom: 12,
   },
@@ -678,17 +893,17 @@ const styles = StyleSheet.create({
   alertTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#7C2D12',
+    color: '#1E40AF',
     marginBottom: 4,
   },
   alertSubtitle: {
     fontSize: 12,
-    color: '#991B1B',
+    color: '#4338CA',
     marginBottom: 8,
   },
   alertAction: {
     fontSize: 12,
-    color: '#DC2626',
+    color: '#6366F1',
     fontWeight: '600',
   },
   searchContainer: {
@@ -973,6 +1188,23 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 4,
   },
+  analyticsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  analyticsLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  analyticsValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
   toggleItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1025,4 +1257,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default AdminDashboard;
+export default AdminDashboard

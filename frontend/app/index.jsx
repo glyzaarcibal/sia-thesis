@@ -22,6 +22,8 @@ import ClipCardGame from "./pages/games/ClipCardGame";
 import Diary from "./pages/games/Diary";
 import NotificationsScreen from "./pages/notification/Notifications";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import ArticleManager from "./pages/admin/ArticleManager";
+
 
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { NavigationContainer } from "@react-navigation/native";
@@ -34,6 +36,8 @@ import Slider2 from "./pages/resources/slider2";
 import Slider3 from "./pages/resources/slider3";
 import Slider4 from "./pages/resources/slider4";
 import Resources from "./pages/resources/Resources";
+import ArticleDetail from "./pages/resources/ArticleDetail"
+
 import Fallinggame from "./pages/games/Fallinggame";
 import Profile from "./pages/auth/Profile";
 
@@ -51,6 +55,8 @@ const AuthStack = () => {
         <Stack.Screen name="Register" component={Register} />
 
         <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
+        <Stack.Screen name="ArticleManager" component={ArticleManager} />
+        <Stack.Screen name="ArticleDetail" component={ArticleDetail} />
         <Stack.Screen name="Main" component={_layout} />
         <Stack.Screen name="Chat" component={Chat} />
         <Stack.Screen name="Game" component={Games} />

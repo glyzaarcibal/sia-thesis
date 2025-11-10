@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
+const Article = require('./models/Article');
 
 // Middleware
 app.use(cors());
@@ -84,6 +85,14 @@ app.get('/', (req, res) => {
         getOne: 'GET /api/users/:id',
         update: 'PATCH /api/users/:id',
         delete: 'DELETE /api/users/:id'
+      },
+      articles: {
+        getAll: 'GET /api/articles',
+        getOne: 'GET /api/articles/:id',
+        create: 'POST /api/articles',
+        update: 'PUT /api/articles/:id',
+        delete: 'DELETE /api/articles/:id',
+        verify: 'PATCH /api/articles/:id/verify'
       }
     }
   });
@@ -429,10 +438,311 @@ app.delete('/api/users/:id', protect, async (req, res) => {
 });
 
 // ============================================
-// ERROR HANDLERS
+// ARTICLE ROUTES (MUST BE BEFORE 404 HANDLER!)
 // ============================================
 
-// 404 handler
+// @route   GET /api/articles
+// @desc    Get all articles with filters
+// @access  Protected
+app.get('/api/articles', protect, async (req, res) => {
+  try {
+    const { type, status, search } = req.query;
+    
+    let query = {};
+    
+    // Filter by type
+    if (type && type !== 'all') {
+      query.article_type = type;
+    }
+    
+    // Filter by status
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    
+    // Search
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { excerpt: { $regex: search, $options: 'i' } },
+        { category: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    const articles = await Article.find(query)
+      .populate('created_by', 'first_name last_name email')
+      .sort({ createdAt: -1 });
+    
+    res.json(articles);
+  } catch (error) {
+    console.error('Get articles error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   GET /api/articles/:id
+// @desc    Get single article
+// @access  Protected
+app.get('/api/articles/:id', protect, async (req, res) => {
+  try {
+    const article = await Article.findById(req.params.id)
+      .populate('created_by', 'first_name last_name email');
+    
+    if (!article) {
+      return res.status(404).json({ message: 'Article not found' });
+    }
+    
+    res.json(article);
+  } catch (error) {
+    console.error('Get article error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   POST /api/articles
+// @desc    Create new article
+// @access  Protected (Admin only)
+app.post('/api/articles', protect, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.is_staff) {
+      return res.status(403).json({ message: 'Not authorized to create articles' });
+    }
+
+    const {
+      title,
+      article_type,
+      content,
+      external_url,
+      external_source,
+      original_author,
+      excerpt,
+      category,
+      tags,
+      featured_image,
+      reading_time,
+      status
+    } = req.body;
+
+    // Validation
+    if (!title || !excerpt || !category) {
+      return res.status(400).json({ 
+        message: 'Please provide title, excerpt, and category' 
+      });
+    }
+
+    if (article_type === 'external' && !external_url) {
+      return res.status(400).json({ 
+        message: 'External URL is required for external articles' 
+      });
+    }
+
+    if (article_type === 'internal' && !content) {
+      return res.status(400).json({ 
+        message: 'Content is required for internal articles' 
+      });
+    }
+
+    // Create article
+    const article = new Article({
+      title,
+      article_type,
+      content: article_type === 'internal' ? content : '',
+      external_url: article_type === 'external' ? external_url : '',
+      external_source: article_type === 'external' ? external_source : '',
+      original_author: article_type === 'external' ? original_author : '',
+      excerpt,
+      category,
+      tags: Array.isArray(tags) ? tags : [],
+      featured_image: featured_image || '',
+      reading_time: reading_time || 5,
+      status: status || 'published',
+      is_verified: article_type === 'internal' ? true : false,
+      created_by: req.user._id
+    });
+
+    await article.save();
+
+    const populatedArticle = await Article.findById(article._id)
+      .populate('created_by', 'first_name last_name email');
+
+    res.status(201).json({
+      message: 'Article created successfully',
+      article: populatedArticle
+    });
+  } catch (error) {
+    console.error('Create article error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   PUT /api/articles/:id
+// @desc    Update article
+// @access  Protected (Admin only)
+app.put('/api/articles/:id', protect, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.is_staff) {
+      return res.status(403).json({ message: 'Not authorized to update articles' });
+    }
+
+    const article = await Article.findById(req.params.id);
+    
+    if (!article) {
+      return res.status(404).json({ message: 'Article not found' });
+    }
+
+    const {
+      title,
+      article_type,
+      content,
+      external_url,
+      external_source,
+      original_author,
+      excerpt,
+      category,
+      tags,
+      featured_image,
+      reading_time,
+      status
+    } = req.body;
+
+    // Update fields
+    if (title) article.title = title;
+    if (article_type) article.article_type = article_type;
+    if (content !== undefined) article.content = content;
+    if (external_url !== undefined) article.external_url = external_url;
+    if (external_source !== undefined) article.external_source = external_source;
+    if (original_author !== undefined) article.original_author = original_author;
+    if (excerpt) article.excerpt = excerpt;
+    if (category) article.category = category;
+    if (tags) article.tags = Array.isArray(tags) ? tags : [];
+    if (featured_image !== undefined) article.featured_image = featured_image;
+    if (reading_time) article.reading_time = reading_time;
+    if (status) article.status = status;
+
+    await article.save();
+
+    const updatedArticle = await Article.findById(article._id)
+      .populate('created_by', 'first_name last_name email');
+
+    res.json({
+      message: 'Article updated successfully',
+      article: updatedArticle
+    });
+  } catch (error) {
+    console.error('Update article error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   DELETE /api/articles/:id
+// @desc    Delete article
+// @access  Protected (Admin only)
+app.delete('/api/articles/:id', protect, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.is_staff) {
+      return res.status(403).json({ message: 'Not authorized to delete articles' });
+    }
+
+    const article = await Article.findById(req.params.id);
+    
+    if (!article) {
+      return res.status(404).json({ message: 'Article not found' });
+    }
+
+    await article.deleteOne();
+
+    res.json({ message: 'Article deleted successfully' });
+  } catch (error) {
+    console.error('Delete article error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   PATCH /api/articles/:id/verify
+// @desc    Verify external article
+// @access  Protected (Admin only)
+app.patch('/api/articles/:id/verify', protect, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (!req.user.is_staff) {
+      return res.status(403).json({ message: 'Not authorized to verify articles' });
+    }
+
+    const article = await Article.findById(req.params.id);
+    
+    if (!article) {
+      return res.status(404).json({ message: 'Article not found' });
+    }
+
+    if (article.article_type !== 'external') {
+      return res.status(400).json({ message: 'Only external articles can be verified' });
+    }
+
+    article.is_verified = true;
+    await article.save();
+
+    res.json({
+      message: 'Article verified successfully',
+      article
+    });
+  } catch (error) {
+    console.error('Verify article error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   PATCH /api/articles/:id/increment-views
+// @desc    Increment article views
+// @access  Public
+app.patch('/api/articles/:id/increment-views', async (req, res) => {
+  try {
+    const article = await Article.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { views: 1 } },
+      { new: true }
+    );
+
+    if (!article) {
+      return res.status(404).json({ message: 'Article not found' });
+    }
+
+    res.json({ message: 'Views incremented', views: article.views });
+  } catch (error) {
+    console.error('Increment views error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   PATCH /api/articles/:id/increment-clicks
+// @desc    Increment external article clicks
+// @access  Public
+app.patch('/api/articles/:id/increment-clicks', async (req, res) => {
+  try {
+    const article = await Article.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { clicks: 1 } },
+      { new: true }
+    );
+
+    if (!article) {
+      return res.status(404).json({ message: 'Article not found' });
+    }
+
+    res.json({ message: 'Clicks incremented', clicks: article.clicks });
+  } catch (error) {
+    console.error('Increment clicks error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// ============================================
+// ERROR HANDLERS (MUST BE LAST!)
+// ============================================
+
+// 404 handler - catches all undefined routes
 app.use((req, res) => {
   res.status(404).json({ 
     message: 'Route not found',
@@ -454,12 +764,12 @@ app.use((err, req, res, next) => {
 // ============================================
 
 const PORT = process.env.PORT || 5000;
-const HOST = '0.0.0.0'; // ⭐ ADD THIS LINE
+const HOST = '0.0.0.0';
 
-const server = app.listen(PORT, HOST, () => { // ⭐ ADD HOST HERE
+const server = app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Local: http://localhost:${PORT}`);
-  console.log(`🌐 Network: http://192.168.100.129:${PORT}`); // ⭐ ADD THIS LINE
+  console.log(`🌐 Network: http://10.111.189.143:${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

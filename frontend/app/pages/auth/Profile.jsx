@@ -7,6 +7,7 @@ import {
   Modal,
   TouchableOpacity,
   FlatList,
+  Dimensions,
 } from "react-native";
 import React, { useState, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -30,31 +31,45 @@ const COUNTRY_CODES = [
   { code: "+971", country: "UAE", flag: "🇦🇪" },
 ];
 
+const isWeb = Platform.OS === "web";
+const { width } = Dimensions.get("window");
+const isDesktop = isWeb && width >= 768;
+
 const Profile = ({ navigation }) => {
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
   const [location, setLocation] = useState("");
-  const [countryCode, setCountryCode] = useState("+63"); // Default to Philippines
+  const [countryCode, setCountryCode] = useState("+63");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const { axiosInstanceWithBearer } = useAuth();
 
+  // Web-compatible alert function
+  const showAlert = (title, message) => {
+    if (isWeb) {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message, [{ text: "OK" }]);
+    }
+  };
+
   useEffect(() => {
     // Request location permission when component mounts
     (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert(
-            "Permission Denied",
-            "Please enable location services to automatically fetch your location.",
-            [{ text: "OK" }]
-          );
+      if (!isWeb) {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== "granted") {
+            showAlert(
+              "Permission Denied",
+              "Please enable location services to automatically fetch your location."
+            );
+          }
+        } catch (error) {
+          console.error("Error requesting location permission:", error);
         }
-      } catch (error) {
-        console.error("Error requesting location permission:", error);
       }
     })();
   }, []);
@@ -62,36 +77,73 @@ const Profile = ({ navigation }) => {
   const getUserLocation = async () => {
     setLoading(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission denied to access location");
+      if (isWeb) {
+        // Web geolocation API
+        if (!navigator.geolocation) {
+          showAlert("Error", "Geolocation is not supported by your browser");
+          setLoading(false);
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            
+            // Use reverse geocoding API for web
+            try {
+              const response = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+              );
+              const data = await response.json();
+              
+              if (data && data.address) {
+                const locationString = `${data.address.city || data.address.town || ""}, ${
+                  data.address.state || ""
+                }, ${data.address.country || ""}`;
+                setLocation(locationString.replace(/^, |, $|, ,/g, ""));
+              }
+            } catch (error) {
+              console.error("Error reverse geocoding:", error);
+              showAlert("Error", "Could not fetch your location. Please enter it manually.");
+            } finally {
+              setLoading(false);
+            }
+          },
+          (error) => {
+            console.error("Geolocation error:", error);
+            showAlert("Error", "Could not fetch your location. Please enter it manually.");
+            setLoading(false);
+          }
+        );
+      } else {
+        // Mobile location
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          showAlert("Permission Denied", "Permission denied to access location");
+          setLoading(false);
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({});
+        const { latitude, longitude } = location.coords;
+
+        const response = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude,
+        });
+
+        if (response && response.length > 0) {
+          const address = response[0];
+          const locationString = `${address.city || ""}, ${
+            address.region || ""
+          }, ${address.country || ""}`;
+          setLocation(locationString.replace(/^, |, $|, ,/g, ""));
+        }
         setLoading(false);
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = location.coords;
-
-      // Get address from coordinates
-      const response = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      });
-
-      if (response && response.length > 0) {
-        const address = response[0];
-        const locationString = `${address.city || ""}, ${
-          address.region || ""
-        }, ${address.country || ""}`;
-        setLocation(locationString.replace(/^, |, $|, ,/g, ""));
       }
     } catch (error) {
       console.error("Error getting location:", error);
-      Alert.alert(
-        "Error",
-        "Could not fetch your location. Please enter it manually."
-      );
-    } finally {
+      showAlert("Error", "Could not fetch your location. Please enter it manually.");
       setLoading(false);
     }
   };
@@ -99,13 +151,13 @@ const Profile = ({ navigation }) => {
   const handleSave = async () => {
     // Validation
     if (age && isNaN(parseInt(age))) {
-      Alert.alert("Error", "Please enter a valid age.");
+      showAlert("Error", "Please enter a valid age.");
       return;
     }
 
     // Validate phone number if provided
     if (phoneNumber && !/^\d{7,15}$/.test(phoneNumber)) {
-      Alert.alert(
+      showAlert(
         "Error",
         "Please enter a valid phone number (7-15 digits, numbers only)."
       );
@@ -114,7 +166,6 @@ const Profile = ({ navigation }) => {
 
     setSubmitLoading(true);
     try {
-      // Prepare data for the API call
       const profileData = {
         age: age ? parseInt(age) : null,
         gender: gender ? gender.charAt(0).toUpperCase() + gender.slice(1) : "",
@@ -122,21 +173,20 @@ const Profile = ({ navigation }) => {
         phone_number: phoneNumber ? `${countryCode}${phoneNumber}` : "",
       };
 
-      // Make the API call to update the profile
       const response = await axiosInstanceWithBearer.put(
-        "/api/user/profile/",
+        "/api/user/profile",
         profileData
       );
       console.log("Profile updated successfully:", response.data);
       if (response.status === 200) {
-        Alert.alert("Success", "Profile information updated successfully!");
+        showAlert("Success", "Profile information updated successfully!");
         navigation.navigate("Main");
       } else {
-        Alert.alert("Error", "Failed to update profile. Please try again.");
+        showAlert("Error", "Failed to update profile. Please try again.");
       }
     } catch (error) {
       console.error("Error updating profile:", error);
-      Alert.alert(
+      showAlert(
         "Error",
         error.response?.data?.message ||
           "Failed to update profile. Please try again."
@@ -154,92 +204,99 @@ const Profile = ({ navigation }) => {
   const selectedCountry = COUNTRY_CODES.find((c) => c.code === countryCode);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.heading}>Let us know more about you</Text>
+    <SafeAreaView style={[styles.container, isDesktop && styles.containerDesktop]}>
+      <ScrollView 
+        contentContainerStyle={[
+          styles.scrollContent, 
+          isDesktop && styles.scrollContentDesktop
+        ]}
+      >
+        <View style={[styles.formWrapper, isDesktop && styles.formWrapperDesktop]}>
+          <Text style={styles.heading}>Let us know more about you</Text>
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            label="Age"
-            value={age}
-            onChangeText={setAge}
-            keyboardType="numeric"
-            style={styles.input}
-            mode="outlined"
-            disabled={loading}
-          />
-
-          <Text style={styles.label}>Gender</Text>
-          <RadioButton.Group onValueChange={setGender} value={gender}>
-            <View style={styles.radioContainer}>
-              <View style={styles.radioOption}>
-                <RadioButton value="male" disabled={loading} />
-                <Text>Male</Text>
-              </View>
-              <View style={styles.radioOption}>
-                <RadioButton value="female" disabled={loading} />
-                <Text>Female</Text>
-              </View>
-              <View style={styles.radioOption}>
-                <RadioButton value="other" disabled={loading} />
-                <Text>Other</Text>
-              </View>
-            </View>
-          </RadioButton.Group>
-
-          <Text style={styles.label}>Contact Number</Text>
-          <View style={styles.phoneContainer}>
-            <TouchableOpacity
-              style={styles.countryCodeButton}
-              onPress={() => setModalVisible(true)}
-              disabled={loading}
-            >
-              <Text style={styles.countryCodeText}>
-                {selectedCountry?.flag} {countryCode}
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.inputContainer}>
             <TextInput
-              label="Phone Number"
-              value={phoneNumber}
-              onChangeText={(text) => setPhoneNumber(text.replace(/[^0-9]/g, ""))}
-              keyboardType="phone-pad"
-              style={styles.phoneInput}
-              mode="outlined"
-              disabled={loading}
-              placeholder="9123456789"
-            />
-          </View>
-
-          <View style={styles.locationContainer}>
-            <TextInput
-              label="Location"
-              value={location}
-              onChangeText={setLocation}
+              label="Age"
+              value={age}
+              onChangeText={setAge}
+              keyboardType="numeric"
               style={styles.input}
               mode="outlined"
               disabled={loading}
             />
-            <Button
-              mode="contained"
-              onPress={getUserLocation}
-              loading={loading}
-              style={styles.locationButton}
-              disabled={loading}
-            >
-              Get Current Location
-            </Button>
-          </View>
-        </View>
 
-        <Button
-          mode="contained"
-          onPress={handleSave}
-          style={styles.saveButton}
-          loading={submitLoading}
-          disabled={loading || submitLoading}
-        >
-          Save Profile
-        </Button>
+            <Text style={styles.label}>Gender</Text>
+            <RadioButton.Group onValueChange={setGender} value={gender}>
+              <View style={[styles.radioContainer, isDesktop && styles.radioContainerDesktop]}>
+                <View style={styles.radioOption}>
+                  <RadioButton value="male" disabled={loading} />
+                  <Text>Male</Text>
+                </View>
+                <View style={styles.radioOption}>
+                  <RadioButton value="female" disabled={loading} />
+                  <Text>Female</Text>
+                </View>
+                <View style={styles.radioOption}>
+                  <RadioButton value="other" disabled={loading} />
+                  <Text>Other</Text>
+                </View>
+              </View>
+            </RadioButton.Group>
+
+            <Text style={styles.label}>Contact Number</Text>
+            <View style={[styles.phoneContainer, isDesktop && styles.phoneContainerDesktop]}>
+              <TouchableOpacity
+                style={styles.countryCodeButton}
+                onPress={() => setModalVisible(true)}
+                disabled={loading}
+              >
+                <Text style={styles.countryCodeText}>
+                  {selectedCountry?.flag} {countryCode}
+                </Text>
+              </TouchableOpacity>
+              <TextInput
+                label="Phone Number"
+                value={phoneNumber}
+                onChangeText={(text) => setPhoneNumber(text.replace(/[^0-9]/g, ""))}
+                keyboardType="phone-pad"
+                style={styles.phoneInput}
+                mode="outlined"
+                disabled={loading}
+                placeholder="9123456789"
+              />
+            </View>
+
+            <View style={styles.locationContainer}>
+              <TextInput
+                label="Location"
+                value={location}
+                onChangeText={setLocation}
+                style={styles.input}
+                mode="outlined"
+                disabled={loading}
+              />
+              <Button
+                mode="contained"
+                onPress={getUserLocation}
+                loading={loading}
+                style={styles.locationButton}
+                disabled={loading}
+              >
+                Get Current Location
+              </Button>
+            </View>
+          </View>
+
+          <Button
+            mode="contained"
+            onPress={handleSave}
+            style={styles.saveButton}
+            loading={submitLoading}
+            disabled={loading || submitLoading}
+          >
+            Save Profile
+          </Button>
+        </View>
       </ScrollView>
 
       {/* Country Code Modal */}
@@ -250,7 +307,7 @@ const Profile = ({ navigation }) => {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, isDesktop && styles.modalContentDesktop]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Country Code</Text>
               <TouchableOpacity
@@ -290,8 +347,31 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  containerDesktop: {
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+  },
   scrollContent: {
     flexGrow: 1,
+  },
+  scrollContentDesktop: {
+    width: "100%",
+    maxWidth: 800,
+    alignItems: "center",
+  },
+  formWrapper: {
+    width: "100%",
+  },
+  formWrapperDesktop: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    marginVertical: 24,
   },
   heading: {
     fontSize: 24,
@@ -313,16 +393,24 @@ const styles = StyleSheet.create({
   radioContainer: {
     flexDirection: "row",
     marginBottom: 16,
+    flexWrap: "wrap",
+  },
+  radioContainerDesktop: {
+    justifyContent: "flex-start",
   },
   radioOption: {
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 16,
+    marginRight: 24,
+    marginBottom: 8,
   },
   phoneContainer: {
     flexDirection: "row",
     marginBottom: 16,
     alignItems: "flex-start",
+  },
+  phoneContainerDesktop: {
+    alignItems: "center",
   },
   countryCodeButton: {
     borderWidth: 1,
@@ -334,6 +422,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     height: 56,
+    cursor: isWeb ? "pointer" : "default",
   },
   countryCodeText: {
     fontSize: 16,
@@ -355,7 +444,8 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+    justifyContent: isDesktop ? "center" : "flex-end",
+    alignItems: isDesktop ? "center" : "stretch",
   },
   modalContent: {
     backgroundColor: "white",
@@ -363,6 +453,13 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: "70%",
     paddingTop: 16,
+    width: "100%",
+  },
+  modalContentDesktop: {
+    borderRadius: 12,
+    maxWidth: 500,
+    maxHeight: "80%",
+    width: "90%",
   },
   modalHeader: {
     flexDirection: "row",
@@ -379,6 +476,7 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 4,
+    cursor: isWeb ? "pointer" : "default",
   },
   closeButtonText: {
     fontSize: 24,
@@ -392,6 +490,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+    cursor: isWeb ? "pointer" : "default",
   },
   selectedCountryItem: {
     backgroundColor: "#e3f2fd",
