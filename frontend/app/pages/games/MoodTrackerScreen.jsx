@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   View,
-  FlatList,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -15,41 +14,42 @@ import AntDesign from "@expo/vector-icons/AntDesign";
 import { default as Text } from "../../../components/CustomText";
 import BoldText from "../../../components/BoldText";
 
-const moods = [
-  {
-    animation: require("../../../assets/images/animations/happy.json"),
-    mood: "Happy",
-  },
-  {
-    animation: require("../../../assets/images/animations/sad.json"),
-    mood: "Sad",
-  },
-  {
-    animation: require("../../../assets/images/animations/angry.json"),
-    mood: "Angry",
-  },
-  {
-    animation: require("../../../assets/images/animations/anxious.json"),
-    mood: "Anxious",
-  },
-  {
-    animation: require("../../../assets/images/animations/tired.json"),
-    mood: "Tired",
-  },
-  {
-    animation: require("../../../assets/images/animations/relax.json"),
-    mood: "Relaxed",
-  },
-  {
-    animation: require("../../../assets/images/animations/content.json"),
-    mood: "Calm",
-  },
-];
+const moods = {
+  positive_low: [
+    { animation: require("../../../assets/images/animations/content.json"), mood: "Calm" },
+    { animation: require("../../../assets/images/animations/content.json"), mood: "Relaxed" },
+    { animation: require("../../../assets/images/animations/content.json"), mood: "Content" },
+    { animation: require("../../../assets/images/animations/content.json"), mood: "Peaceful" },
+    { animation: require("../../../assets/images/animations/content.json"), mood: "Grateful" },
+  ],
+  positive_high: [
+    { animation: require("../../../assets/images/animations/happy.json"), mood: "Excited" },
+    { animation: require("../../../assets/images/animations/happy.json"), mood: "Joyful" },
+    { animation: require("../../../assets/images/animations/happy.json"), mood: "Thrilled" },
+    { animation: require("../../../assets/images/animations/happy.json"), mood: "Inspired" },
+    { animation: require("../../../assets/images/animations/happy.json"), mood: "Playful" },
+  ],
+  negative_low: [
+    { animation: require("../../../assets/images/animations/anxious.json"), mood: "Depressed" },
+    { animation: require("../../../assets/images/animations/tired.json"), mood: "Tired" },
+    { animation: require("../../../assets/images/animations/sad.json"), mood: "Disappointed" },
+    { animation: require("../../../assets/images/animations/angry.json"), mood: "Annoyed" },
+    { animation: require("../../../assets/images/animations/tired.json"), mood: "Bored" },
+  ],
+  negative_high: [
+    { animation: require("../../../assets/images/animations/anxious.json"), mood: "Anxious" },
+    { animation: require("../../../assets/images/animations/anxious.json"), mood: "Overwhelmed" },
+    { animation: require("../../../assets/images/animations/anxious.json"), mood: "Panicked" },
+    { animation: require("../../../assets/images/animations/angry.json"), mood: "Irritated" },
+    { animation: require("../../../assets/images/animations/anxious.json"), mood: "Frustrated" },
+  ],
+};
 
 const MoodTrackerScreen = ({ navigation }) => {
   const [selectedMood, setSelectedMood] = useState(null);
-  const [reason, setReason] = useState("");
+  const [cause, setCause] = useState("");
   const [moodHistory, setMoodHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
   const { axiosInstanceWithBearer } = useAuth();
 
   useEffect(() => {
@@ -57,69 +57,75 @@ const MoodTrackerScreen = ({ navigation }) => {
   }, []);
 
   const formatDate = (date) => {
-    const options = { month: 'short', day: 'numeric', year: 'numeric' };
-    return new Date(date).toLocaleDateString('en-US', options);
+    const options = { month: "short", day: "numeric", year: "numeric" };
+    return new Date(date).toLocaleDateString("en-US", options);
   };
 
   const formatTime = (date) => {
-    const options = { hour: '2-digit', minute: '2-digit', hour12: true };
-    return new Date(date).toLocaleTimeString('en-US', options);
+    const options = { hour: "2-digit", minute: "2-digit", hour12: true };
+    return new Date(date).toLocaleTimeString("en-US", options);
   };
 
   const saveMood = async () => {
     if (!selectedMood) return;
 
+    setLoading(true);
     const now = new Date();
     const newEntry = {
       mood: selectedMood.mood,
-      reason: reason.trim(),
+      reason: cause.trim(),
       timestamp: now.toISOString(),
     };
 
     try {
-      await axiosInstanceWithBearer.post("/mood-tracker/", newEntry);
-      const updatedHistory = [newEntry, ...moodHistory];
-
-      setMoodHistory(updatedHistory);
-      await AsyncStorage.setItem("moodHistory", JSON.stringify(updatedHistory));
-
+      const response = await axiosInstanceWithBearer.post("/api/mood-tracker", newEntry);
+      
+      // Load fresh data from server
+      await loadMoodHistory();
+      
       setSelectedMood(null);
-      setReason("");
+      setCause("");
       
       Alert.alert("Success", "Mood saved successfully! 🎉");
     } catch (error) {
-      console.error(
-        "Error saving mood:",
-        error.response ? error.response.data : error
-      );
-      // Still save locally even if API fails
+      console.error("Error saving mood:", error.response ? error.response.data : error);
+      
+      // Fallback to local storage
       const updatedHistory = [newEntry, ...moodHistory];
       setMoodHistory(updatedHistory);
       await AsyncStorage.setItem("moodHistory", JSON.stringify(updatedHistory));
       
       setSelectedMood(null);
-      setReason("");
-      Alert.alert("Saved", "Mood saved locally!");
+      setCause("");
+      Alert.alert("Saved Locally", "Mood saved locally. Will sync when online.");
+    } finally {
+      setLoading(false);
     }
   };
 
   const loadMoodHistory = async () => {
     try {
-      const savedHistory = await AsyncStorage.getItem("moodHistory");
-      if (savedHistory) {
-        const parsed = JSON.parse(savedHistory);
-        console.log("Loaded mood history:", parsed);
-        setMoodHistory(parsed);
+      // Try to load from API first
+      const response = await axiosInstanceWithBearer.get("/api/mood-tracker");
+      if (response.data && response.data.entries) {
+        setMoodHistory(response.data.entries);
+        // Save to AsyncStorage as backup
+        await AsyncStorage.setItem("moodHistory", JSON.stringify(response.data.entries));
       }
     } catch (error) {
-      console.error("Error loading mood history:", error);
+      console.error("Error loading from API, using local storage:", error);
+      // Fallback to local storage
+      const savedHistory = await AsyncStorage.getItem("moodHistory");
+      if (savedHistory) {
+        setMoodHistory(JSON.parse(savedHistory));
+      }
     }
   };
 
   const confirmClearHistory = () => {
     Alert.alert(
       "Clear History",
-      "Are you sure you want to clear all your mood entries?",
+      "Are you sure you want to clear all your mood entries? This will delete them from the server.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Clear", style: "destructive", onPress: clearHistory },
@@ -129,17 +135,56 @@ const MoodTrackerScreen = ({ navigation }) => {
 
   const clearHistory = async () => {
     try {
+      // Clear from server
+      await axiosInstanceWithBearer.delete("/api/mood-tracker");
+      // Clear from local storage
       await AsyncStorage.removeItem("moodHistory");
       setMoodHistory([]);
       Alert.alert("Done", "Mood history cleared!");
     } catch (error) {
       console.error("Error clearing history:", error);
+      Alert.alert("Error", "Failed to clear history from server. Try again later.");
     }
   };
 
   const getMoodAnimation = (moodName) => {
-    const moodObj = moods.find(m => m.mood === moodName);
-    return moodObj ? moodObj.animation : null;
+    for (const category in moods) {
+      const found = moods[category].find((m) => m.mood === moodName);
+      if (found) return found.animation;
+    }
+    return null;
+  };
+
+  const renderMoodSection = (title, category, color) => (
+    <View style={styles.moodSection}>
+      <BoldText style={[styles.sectionTitle, { color }]}>{title}</BoldText>
+      <View style={styles.moodGrid}>
+        {moods[category].map((mood) => (
+          <TouchableOpacity
+            key={mood.mood}
+            onPress={() => setSelectedMood(mood)}
+            style={[styles.moodButton, { backgroundColor: color + "20" }]}
+            activeOpacity={0.7}
+          >
+            <LottieView
+              source={mood.animation}
+              autoPlay
+              loop
+              style={styles.moodAnimation}
+            />
+            <Text style={[styles.moodLabel, { color }]}>{mood.mood}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const getMoodColor = (moodName) => {
+    if (moods.positive_low.find(m => m.mood === moodName)) return "#4CAF50";
+    if (moods.positive_high.find(m => m.mood === moodName)) return "#66BB6A";
+    if (moods.negative_low.find(m => m.mood === moodName)) return "#FF9800";
+    if (moods.negative_high.find(m => m.mood === moodName)) return "#F44336";
+    return "#9E9E9E";
   };
 
   return (
@@ -147,55 +192,49 @@ const MoodTrackerScreen = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <AntDesign name="arrow-left" size={24} color="#1B5E20" />
-          
+          <AntDesign name="left" size={24} color="#1B5E20" />
         </TouchableOpacity>
+        <BoldText style={styles.headerTitle}>Mood Tracker</BoldText>
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <BoldText style={styles.title}>How are you feeling today?</BoldText>
+        <Text style={styles.subtitle}>
+          Track your emotional state to understand your patterns
+        </Text>
 
         {/* Mood Selection */}
         {!selectedMood ? (
           <View style={styles.moodSelector}>
-            {moods.map((mood) => (
-              <TouchableOpacity
-                key={mood.mood}
-                onPress={() => setSelectedMood(mood)}
-                style={styles.moodButton}
-              >
-                <LottieView
-                  source={mood.animation}
-                  autoPlay
-                  loop
-                  style={styles.moodAnimation}
-                />
-                <Text style={styles.moodLabel}>{mood.mood}</Text>
-              </TouchableOpacity>
-            ))}
+            {renderMoodSection("😊 Positive (Calm & Content)", "positive_low", "#4CAF50")}
+            {renderMoodSection("🎉 Positive (Energetic & Happy)", "positive_high", "#66BB6A")}
+            {renderMoodSection("😔 Negative (Low Energy)", "negative_low", "#FF9800")}
+            {renderMoodSection("😤 Negative (High Energy)", "negative_high", "#F44336")}
           </View>
         ) : (
           <View style={styles.reasonContainer}>
-            <View style={styles.selectedMoodCard}>
+            <View style={[styles.selectedMoodCard, { borderColor: getMoodColor(selectedMood.mood) }]}>
               <LottieView
                 source={selectedMood.animation}
                 autoPlay
                 loop
                 style={styles.largeMoodAnimation}
               />
-              <BoldText style={styles.selectedMoodName}>
+              <BoldText style={[styles.selectedMoodName, { color: getMoodColor(selectedMood.mood) }]}>
                 {selectedMood.mood}
               </BoldText>
             </View>
 
+            <Text style={styles.inputLabel}>What caused this mood?</Text>
             <TextInput
               style={styles.input}
-              placeholder="What made you feel this way? (optional)"
-              placeholderTextColor="#81C784"
-              value={reason}
-              onChangeText={setReason}
+              placeholder="Describe what happened or how you're feeling..."
+              placeholderTextColor="#999"
+              value={cause}
+              onChangeText={setCause}
               multiline
-              numberOfLines={3}
+              numberOfLines={4}
             />
 
             <View style={styles.buttonRow}>
@@ -203,13 +242,20 @@ const MoodTrackerScreen = ({ navigation }) => {
                 style={styles.cancelButton}
                 onPress={() => {
                   setSelectedMood(null);
-                  setReason("");
+                  setCause("");
                 }}
+                disabled={loading}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={saveMood}>
-                <BoldText style={styles.saveButtonText}>Save Mood</BoldText>
+              <TouchableOpacity 
+                style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
+                onPress={saveMood}
+                disabled={loading}
+              >
+                <BoldText style={styles.saveButtonText}>
+                  {loading ? "Saving..." : "Save Mood"}
+                </BoldText>
               </TouchableOpacity>
             </View>
           </View>
@@ -217,20 +263,26 @@ const MoodTrackerScreen = ({ navigation }) => {
 
         {/* Mood History */}
         <View style={styles.historySection}>
-          <BoldText style={styles.historyTitle}>Mood History</BoldText>
+          <View style={styles.historyHeader}>
+            <BoldText style={styles.historyTitle}>Mood History</BoldText>
+            <Text style={styles.historyCount}>{moodHistory.length} entries</Text>
+          </View>
 
           {moodHistory.length === 0 ? (
             <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📊</Text>
+              <BoldText style={styles.emptyTitle}>No entries yet</BoldText>
               <Text style={styles.emptyText}>
-                No mood entries yet.{"\n"}Start tracking your mood! 😊
+                Start tracking your mood to see patterns and insights
               </Text>
             </View>
           ) : (
             <>
               {moodHistory.map((item, index) => {
                 const moodAnimation = getMoodAnimation(item.mood);
+                const moodColor = getMoodColor(item.mood);
                 return (
-                  <View key={index} style={styles.moodItem}>
+                  <View key={index} style={[styles.moodItem, { borderLeftColor: moodColor }]}>
                     <View style={styles.moodItemHeader}>
                       {moodAnimation && (
                         <LottieView
@@ -240,24 +292,27 @@ const MoodTrackerScreen = ({ navigation }) => {
                           style={styles.historyMoodAnimation}
                         />
                       )}
-                      <BoldText style={styles.moodItemMood}>
-                        {item.mood}
-                      </BoldText>
+                      <View style={styles.moodItemHeaderText}>
+                        <BoldText style={[styles.moodItemMood, { color: moodColor }]}>
+                          {item.mood}
+                        </BoldText>
+                        <View style={styles.moodItemMeta}>
+                          <Text style={styles.moodItemTime}>
+                            {formatTime(item.timestamp)}
+                          </Text>
+                          <Text style={styles.moodItemDivider}>•</Text>
+                          <Text style={styles.moodItemDate}>
+                            {formatDate(item.timestamp)}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
 
-                    <View style={styles.moodItemDetails}>
-                      <Text style={styles.moodItemTime}>
-                        🕒 {formatTime(item.timestamp)}
-                      </Text>
-                      <Text style={styles.moodItemDate}>
-                        📅 {formatDate(item.timestamp)}
-                      </Text>
-                    </View>
-
-                    {item.reason && item.reason.trim() !== "" && (
-                      <Text style={styles.moodItemReason}>
-                        📝 {item.reason}
-                      </Text>
+                    {item.cause && item.cause.trim() !== "" && (
+                      <View style={styles.causeContainer}>
+                        <Text style={styles.causeLabel}>Cause:</Text>
+                        <Text style={styles.moodItemCause}>{item.cause}</Text>
+                      </View>
                     )}
                   </View>
                 );
@@ -267,7 +322,8 @@ const MoodTrackerScreen = ({ navigation }) => {
                 style={styles.clearButton}
                 onPress={confirmClearHistory}
               >
-                <Text style={styles.clearButtonText}>Clear History</Text>
+                <AntDesign name="delete" size={18} color="white" />
+                <Text style={styles.clearButtonText}>Clear All History</Text>
               </TouchableOpacity>
             </>
           )}
@@ -280,49 +336,73 @@ const MoodTrackerScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#D4EDDA",
+    backgroundColor: "#F5F5F5",
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingTop: 20,
     paddingHorizontal: 20,
-    paddingBottom: 10,
+    paddingBottom: 15,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  headerTitle: {
+    fontSize: 18,
+    color: "#1B5E20",
   },
   title: {
-    fontSize: 24,
-    marginTop: 10,
-    marginBottom: 25,
+    fontSize: 26,
+    marginTop: 20,
+    marginBottom: 8,
     textAlign: "center",
     color: "#2E7D32",
     paddingHorizontal: 20,
   },
+  subtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    color: "#666",
+    marginBottom: 25,
+    paddingHorizontal: 30,
+  },
   moodSelector: {
+    paddingHorizontal: 15,
+  },
+  moodSection: {
+    marginBottom: 25,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    marginBottom: 12,
+    marginLeft: 5,
+  },
+  moodGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "center",
-    paddingHorizontal: 10,
-    marginBottom: 30,
+    justifyContent: "flex-start",
   },
   moodButton: {
     alignItems: "center",
-    margin: 8,
-    padding: 15,
-    backgroundColor: "#A5D6A7",
-    borderRadius: 20,
-    elevation: 3,
+    margin: 5,
+    padding: 12,
+    borderRadius: 15,
+    elevation: 2,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    width: 100,
+    shadowRadius: 2,
+    width: 90,
   },
   moodAnimation: {
-    width: 50,
-    height: 50,
+    width: 45,
+    height: 45,
   },
   moodLabel: {
-    fontSize: 13,
-    marginTop: 8,
-    color: "#1B5E20",
+    fontSize: 12,
+    marginTop: 6,
     fontWeight: "600",
   },
   reasonContainer: {
@@ -331,30 +411,36 @@ const styles = StyleSheet.create({
   },
   selectedMoodCard: {
     alignItems: "center",
-    backgroundColor: "#C8E6C9",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 25,
     marginBottom: 20,
-    elevation: 2,
+    elevation: 3,
+    borderWidth: 3,
   },
   largeMoodAnimation: {
     width: 100,
     height: 100,
   },
   selectedMoodName: {
-    fontSize: 26,
-    color: "#1B5E20",
+    fontSize: 28,
     marginTop: 15,
   },
+  inputLabel: {
+    fontSize: 15,
+    color: "#333",
+    marginBottom: 10,
+    fontWeight: "600",
+  },
   input: {
-    borderWidth: 2,
-    borderColor: "#81C784",
+    borderWidth: 1.5,
+    borderColor: "#DDD",
     padding: 15,
-    borderRadius: 15,
+    borderRadius: 12,
     backgroundColor: "#FFFFFF",
     fontSize: 15,
-    color: "#2E7D32",
-    minHeight: 80,
+    color: "#333",
+    minHeight: 100,
     textAlignVertical: "top",
   },
   buttonRow: {
@@ -364,22 +450,25 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: "#9E9E9E",
-    padding: 15,
-    borderRadius: 15,
+    backgroundColor: "#E0E0E0",
+    padding: 16,
+    borderRadius: 12,
     alignItems: "center",
   },
   cancelButtonText: {
-    color: "white",
+    color: "#666",
     fontSize: 16,
     fontWeight: "600",
   },
   saveButton: {
     flex: 1,
     backgroundColor: "#4CAF50",
-    padding: 15,
-    borderRadius: 15,
+    padding: 16,
+    borderRadius: 12,
     alignItems: "center",
+  },
+  saveButtonDisabled: {
+    backgroundColor: "#A5D6A7",
   },
   saveButtonText: {
     color: "white",
@@ -389,79 +478,115 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 30,
   },
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
   historyTitle: {
     fontSize: 22,
-    marginBottom: 15,
     color: "#1B5E20",
   },
+  historyCount: {
+    fontSize: 14,
+    color: "#666",
+  },
   emptyState: {
-    backgroundColor: "#C8E6C9",
+    backgroundColor: "#FFFFFF",
     borderRadius: 15,
     padding: 40,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    color: "#333",
+    marginBottom: 8,
   },
   emptyText: {
-    fontSize: 15,
-    color: "#2E7D32",
+    fontSize: 14,
+    color: "#666",
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 20,
   },
   moodItem: {
     backgroundColor: "#FFFFFF",
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 12,
     marginBottom: 12,
     elevation: 2,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: 2,
     borderLeftWidth: 4,
-    borderLeftColor: "#4CAF50",
   },
   moodItemHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
   },
   historyMoodAnimation: {
-    width: 35,
-    height: 35,
+    width: 40,
+    height: 40,
     marginRight: 12,
+  },
+  moodItemHeaderText: {
+    flex: 1,
   },
   moodItemMood: {
     fontSize: 18,
-    color: "#1B5E20",
+    marginBottom: 4,
   },
-  moodItemDetails: {
+  moodItemMeta: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-    flexWrap: "wrap",
   },
   moodItemTime: {
     fontSize: 13,
-    color: "#555",
-    marginRight: 15,
+    color: "#666",
+  },
+  moodItemDivider: {
+    fontSize: 13,
+    color: "#999",
+    marginHorizontal: 8,
   },
   moodItemDate: {
     fontSize: 13,
-    color: "#555",
+    color: "#666",
   },
-  moodItemReason: {
+  causeContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+  },
+  causeLabel: {
+    fontSize: 12,
+    color: "#999",
+    marginBottom: 4,
+    fontWeight: "600",
+  },
+  moodItemCause: {
     fontSize: 14,
     color: "#333",
-    fontStyle: "italic",
-    marginTop: 5,
     lineHeight: 20,
   },
   clearButton: {
-    backgroundColor: "#E53935",
-    padding: 15,
-    borderRadius: 15,
+    flexDirection: "row",
+    backgroundColor: "#F44336",
+    padding: 16,
+    borderRadius: 12,
     marginTop: 20,
     alignItems: "center",
+    justifyContent: "center",
     elevation: 2,
+    gap: 8,
   },
   clearButtonText: {
     color: "white",

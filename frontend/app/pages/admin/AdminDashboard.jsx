@@ -22,7 +22,7 @@ const { width } = Dimensions.get('window');
 const isMobile = width < 768;
 
 // API Configuration
-const API_URL = 'http://10.111.189.143:5000/api'; // Replace with your backend URL
+const API_URL = 'http://10.206.175.143:5000/api'; // Replace with your backend URL
 
 const AdminDashboard = ({ navigation }) => {
   const router = useRouter();

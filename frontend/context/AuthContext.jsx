@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const axiosInstanceWithBearer = axios.create({
-    baseURL: "http://10.111.189.143:5000",
+    baseURL: "http://10.206.175.143:5000",
     timeout: 20000,
     headers: {
       "Content-Type": "application/json",

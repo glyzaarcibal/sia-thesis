@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const app = express();
 const Article = require('./models/Article');
+const MoodTracker = require('./models/MoodTracker');
 
 // Middleware
 app.use(cors());
@@ -738,6 +739,178 @@ app.patch('/api/articles/:id/increment-clicks', async (req, res) => {
   }
 });
 
+const classifyMood = (mood) => {
+  const moodClassifications = {
+    'Calm': { tone: 'positive', energy: 'low' },
+    'Relaxed': { tone: 'positive', energy: 'low' },
+    'Content': { tone: 'positive', energy: 'low' },
+    'Peaceful': { tone: 'positive', energy: 'low' },
+    'Grateful': { tone: 'positive', energy: 'low' },
+    'Excited': { tone: 'positive', energy: 'high' },
+    'Joyful': { tone: 'positive', energy: 'high' },
+    'Thrilled': { tone: 'positive', energy: 'high' },
+    'Inspired': { tone: 'positive', energy: 'high' },
+    'Playful': { tone: 'positive', energy: 'high' },
+    'Depressed': { tone: 'negative', energy: 'low' },
+    'Tired': { tone: 'negative', energy: 'low' },
+    'Disappointed': { tone: 'negative', energy: 'low' },
+    'Annoyed': { tone: 'negative', energy: 'low' },
+    'Bored': { tone: 'negative', energy: 'low' },
+    'Anxious': { tone: 'negative', energy: 'high' },
+    'Overwhelmed': { tone: 'negative', energy: 'high' },
+    'Panicked': { tone: 'negative', energy: 'high' },
+    'Irritated': { tone: 'negative', energy: 'high' },
+    'Frustrated': { tone: 'negative', energy: 'high' }
+  };
+  return moodClassifications[mood] || { tone: 'neutral', energy: 'low' };
+};
+
+// @route   POST /api/mood-tracker
+app.post('/api/mood-tracker', protect, async (req, res) => {
+  try {
+    const { mood, reason, timestamp } = req.body;
+    if (!mood) {
+      return res.status(400).json({ message: 'Mood is required' });
+    }
+    const classification = classifyMood(mood);
+    const moodEntry = new MoodTracker({
+      user_id: req.user._id,
+      mood,
+      mood_tone: classification.tone,
+      mood_energy: classification.energy,
+      cause: reason || '',
+      timestamp: timestamp ? new Date(timestamp) : new Date()
+    });
+    await moodEntry.save();
+    res.status(201).json({
+      message: 'Mood entry created successfully',
+      entry: moodEntry
+    });
+  } catch (error) {
+    console.error('Create mood entry error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   GET /api/mood-tracker
+app.get('/api/mood-tracker', protect, async (req, res) => {
+  try {
+    const { limit = 50, days } = req.query;
+    let query = { user_id: req.user._id };
+    if (days) {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(days));
+      query.timestamp = { $gte: startDate };
+    }
+    const moodEntries = await MoodTracker.find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit));
+    res.json({
+      count: moodEntries.length,
+      entries: moodEntries
+    });
+  } catch (error) {
+    console.error('Get mood entries error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   GET /api/mood-tracker/stats
+app.get('/api/mood-tracker/stats', protect, async (req, res) => {
+  try {
+    const { days = 30 } = req.query;
+    const stats = await MoodTracker.getUserMoodStats(req.user._id, parseInt(days));
+    const spiral = await MoodTracker.detectMoodSpiral(req.user._id);
+    res.json({
+      period: `Last ${days} days`,
+      stats,
+      spiral
+    });
+  } catch (error) {
+    console.error('Get mood stats error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   GET /api/mood-tracker/:id
+app.get('/api/mood-tracker/:id', protect, async (req, res) => {
+  try {
+    const moodEntry = await MoodTracker.findOne({
+      _id: req.params.id,
+      user_id: req.user._id
+    });
+    if (!moodEntry) {
+      return res.status(404).json({ message: 'Mood entry not found' });
+    }
+    res.json(moodEntry);
+  } catch (error) {
+    console.error('Get mood entry error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   PUT /api/mood-tracker/:id
+app.put('/api/mood-tracker/:id', protect, async (req, res) => {
+  try {
+    const moodEntry = await MoodTracker.findOne({
+      _id: req.params.id,
+      user_id: req.user._id
+    });
+    if (!moodEntry) {
+      return res.status(404).json({ message: 'Mood entry not found' });
+    }
+    const { mood, reason, timestamp } = req.body;
+    if (mood) {
+      const classification = classifyMood(mood);
+      moodEntry.mood = mood;
+      moodEntry.mood_tone = classification.tone;
+      moodEntry.mood_energy = classification.energy;
+    }
+    if (reason !== undefined) moodEntry.cause = reason;
+    if (timestamp) moodEntry.timestamp = new Date(timestamp);
+    await moodEntry.save();
+    res.json({
+      message: 'Mood entry updated successfully',
+      entry: moodEntry
+    });
+  } catch (error) {
+    console.error('Update mood entry error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   DELETE /api/mood-tracker/:id
+app.delete('/api/mood-tracker/:id', protect, async (req, res) => {
+  try {
+    const moodEntry = await MoodTracker.findOne({
+      _id: req.params.id,
+      user_id: req.user._id
+    });
+    if (!moodEntry) {
+      return res.status(404).json({ message: 'Mood entry not found' });
+    }
+    await moodEntry.deleteOne();
+    res.json({ message: 'Mood entry deleted successfully' });
+  } catch (error) {
+    console.error('Delete mood entry error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// @route   DELETE /api/mood-tracker
+app.delete('/api/mood-tracker', protect, async (req, res) => {
+  try {
+    const result = await MoodTracker.deleteMany({ user_id: req.user._id });
+    res.json({
+      message: 'Mood history cleared successfully',
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Clear mood history error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // ============================================
 // ERROR HANDLERS (MUST BE LAST!)
 // ============================================
@@ -769,7 +942,7 @@ const HOST = '0.0.0.0';
 const server = app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Local: http://localhost:${PORT}`);
-  console.log(`🌐 Network: http://10.111.189.143:${PORT}`);
+  console.log(`🌐 Network: http://10.206.175.143:${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
