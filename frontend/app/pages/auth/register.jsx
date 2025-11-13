@@ -130,10 +130,17 @@ const Register = ({ navigation }) => {
       return;
     }
 
-    let isLoggedIn = await register(user, setErrors);
+    // ✅ Call register and get the result
+    let result = await register(user, setErrors);
     setIsLoading(false);
-    if (isLoggedIn) {
+    
+    // ✅ Check if registration was successful
+    if (result && result.success) {
+      console.log("✅ Registration successful, navigating to Profile");
       navigation.navigate("Profile");
+    } else {
+      console.log("❌ Registration failed");
+      setShowError(true);
     }
   };
 

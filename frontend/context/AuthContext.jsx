@@ -185,6 +185,7 @@ export const AuthProvider = ({ children }) => {
       console.log("🔙 Returning from login:", returnValue);
       return returnValue;
     } catch (error) {
+      console.error("❌ Full login error:", error);
       if (error.response) {
         console.log("❌ Response Error:", error.response.data);
         console.log("❌ Status Code:", error.response.status);
@@ -195,7 +196,7 @@ export const AuthProvider = ({ children }) => {
             5,
             Toast.CENTER
           );
-          setError("Invalid username or password");
+          if (setError) setError("Invalid username or password");
         }
       } else if (error.request) {
         console.log("❌ Request Error: No response received from server");
@@ -213,7 +214,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ✅ FIXED: Added proper error handling and role parameter
   const register = async (user, setErrors) => {
+    console.log("📝 Starting registration for:", user.email, "Role:", user.role);
+    
     try {
       const result = await axiosInstance.post(`/api/auth/register`, {
         username: user.email,
@@ -221,13 +225,24 @@ export const AuthProvider = ({ children }) => {
         password: user.password,
         first_name: user.first_name,
         last_name: user.last_name,
+        role: user.role, // ✅ THIS WAS MISSING! Now psychologist role will be saved correctly
         phone: user.phone,
       });
-      console.log("✅ Register successful:", result.data);
       
-      // ✅ Return the login result properly
-      return await login(user.email, user.password, () => {});
+      console.log("✅ Register API successful:", result.data);
+      
+      // ✅ Add small delay to ensure backend is ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // ✅ Return the login result properly with proper error handling
+      console.log("🔐 Now attempting auto-login after registration...");
+      const loginResult = await login(user.email, user.password, () => {});
+      console.log("🔙 Login result after registration:", loginResult);
+      return loginResult;
+      
     } catch (error) {
+      console.error("❌ Full registration error:", error);
+      
       if (error.response) {
         console.log("❌ Response Error:", error.response.data);
         console.log("❌ Status Code:", error.response.status);
@@ -266,6 +281,16 @@ export const AuthProvider = ({ children }) => {
             userAlreadyExists: true,
           }));
         }
+        
+        // ✅ Handle any other backend errors
+        if (error.response.data.message) {
+          Toast.showWithGravity(
+            error.response.data.message,
+            5,
+            Toast.CENTER
+          );
+        }
+        
       } else if (error.request) {
         console.log("❌ Request Error: No response received from server");
         Toast.showWithGravity(
@@ -275,10 +300,16 @@ export const AuthProvider = ({ children }) => {
         );
       } else {
         console.log("❌ Error Message:", error.message);
+        Toast.showWithGravity(
+          "Registration failed. Please try again.",
+          5,
+          Toast.CENTER
+        );
       }
+      
+      // ✅ Always return an object, never undefined
+      return { success: false, user: null };
     }
-
-    return { success: false, user: null };
   };
 
   const fetchUserProfile = async (token) => {
