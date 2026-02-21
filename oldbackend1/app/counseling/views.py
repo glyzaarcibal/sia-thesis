@@ -182,7 +182,7 @@ class SendOTPView(APIView):
         cache.set(f"otp_{phone_number}", otp_code, timeout=300)  # OTP expires in 5 minutes
 
         api_url = "https://api.textlocal.in/send/"
-        api_key = "NjU0ZTZkNjg2ZDQxNzA2YzU3MzM0MjczNzU2OTU2NTQ="  # 🔹 Replace with your TextLocal API key
+        api_key = ""  # 🔹 Replace with your TextLocal API key
 
         payload = {
             "apikey": api_key,
