@@ -72,7 +72,7 @@ const Messages = ({ navigation }) => {
   const makeVapiCall = async () => {
     // vapi.start("d98095b5-6bf0-4bb0-9631-214660006c3c");
     const url = "https://api.vapi.ai/call";
-    const token = "7e9e423d-5e35-4f99-86fd-d94dd0f5a532";
+    const token = "";
     // console.log("ti");
     const data = {
       assistantId: "d98095b5-6bf0-4bb0-9631-214660006c3c",
